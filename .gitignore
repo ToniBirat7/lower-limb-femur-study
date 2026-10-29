@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.zip
+*.part
+data/
+output/
+wandb/
+.ipynb_checkpoints/
+*.nrrd
+*.stl
+*.nii
+*.nii.gz
