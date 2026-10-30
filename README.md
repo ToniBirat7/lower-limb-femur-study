@@ -49,6 +49,7 @@ Detailed dataset documentation: [`docs/DATA_CARD.md`](docs/DATA_CARD.md).
 
 ```text
 ├── src/
+│   ├── __init__.py             # Python package indicator
 │   ├── audit.py                # 101-scan dataset audit and data card generator
 │   ├── voxelize.py             # Parallel STL-to-mask voxelization (VTK / SimpleITK)
 │   ├── split_data.py           # Deterministic patient-level train/val/test split
@@ -58,9 +59,13 @@ Detailed dataset documentation: [`docs/DATA_CARD.md`](docs/DATA_CARD.md).
 │   ├── convert_nnunet.py       # nnU-Net v2 raw dataset formatter (Dataset001_Femur)
 │   ├── planning.py             # Implant sizing & resection angle calculations (1f)
 │   └── xray_projection.py      # 2D projection & rotational error experiment (1g)
+├── tests/
+│   ├── test_geometry.py        # Computational geometry unit tests (pytest)
+│   └── test_metrics.py         # Segmentation metric unit tests (pytest)
 ├── docs/
 │   ├── DATA_CARD.md            # Clinical dataset profile & imaging characteristics
 │   └── SETUP.md                # Environment activation and reproduction guide
+├── pyproject.toml              # Build config, dependencies & test specifications
 ├── splits.json                 # Patient-level split (71 train / 10 val / 20 test)
 ├── hfvalid_audit.csv           # Full audit metrics for all 101 subjects
 └── README.md                   # Project overview & clinical results
@@ -77,9 +82,8 @@ git clone <repo-url>
 cd lower-limb-femur-study
 source .venv/bin/activate
 
-# Run metrics and geometry unit tests
-python src/metrics.py
-python src/geometry.py
+# Run metrics and geometry unit tests via pytest
+pytest
 ```
 
 ### Reproducing Baseline Results

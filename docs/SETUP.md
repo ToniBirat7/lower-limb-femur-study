@@ -67,7 +67,6 @@ Evaluates HU windowing [200, 1800] + largest connected component against ground-
 
 ### D. Run Unit Tests (Geometry & Metrics)
 ```bash
-python src/metrics.py
-python src/geometry.py
+pytest
 ```
-Validates analytical accuracy of Dice, HD95, ASD, sphere fitting, and 3D angle calculations.
+Validates analytical accuracy of Dice, HD95, ASD, sphere fitting, and 3D angle calculations across test suite in `tests/`.
