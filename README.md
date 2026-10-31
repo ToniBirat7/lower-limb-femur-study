@@ -60,20 +60,53 @@ Detailed dataset documentation: [`docs/DATA_CARD.md`](docs/DATA_CARD.md).
 │   ├── planning.py             # Implant sizing & resection angle calculations (1f)
 │   └── xray_projection.py      # 2D projection & rotational error experiment (1g)
 ├── tests/
-│   ├── test_geometry.py        # Computational geometry unit tests (pytest)
-│   └── test_metrics.py         # Segmentation metric unit tests (pytest)
+│   ├── test_geometry.py                # Computational geometry unit tests (pytest)
+│   ├── test_metrics.py                 # Segmentation metric unit tests (pytest)
+│   └── test_planning_and_projection.py # Surgical planning & X-ray projection tests (pytest)
 ├── docs/
-│   ├── DATA_CARD.md            # Clinical dataset profile & imaging characteristics
-│   └── SETUP.md                # Environment activation and reproduction guide
-├── pyproject.toml              # Build config, dependencies & test specifications
-├── splits.json                 # Patient-level split (71 train / 10 val / 20 test)
-├── hfvalid_audit.csv           # Full audit metrics for all 101 subjects
-└── README.md                   # Project overview & clinical results
+│   ├── DATA_CARD.md                    # Clinical dataset profile & imaging characteristics
+│   └── SETUP.md                        # Environment activation and reproduction guide
+├── pyproject.toml                      # Build config, dependencies & test specifications
+├── splits.json                         # Patient-level split (71 train / 10 val / 20 test)
+├── hfvalid_audit.csv                   # Full audit metrics for all 101 subjects
+├── classical_baseline_results.csv      # Baseline validation results (DSC: 0.594)
+├── planning_measurements.csv           # Orthopaedic surgical measurements (Val set)
+├── xray_projection_results.csv         # 2D vs 3D angular projection results (Val set)
+└── README.md                           # Project overview & clinical results
 ```
 
 ---
 
-## 4. Quickstart
+## 4. Benchmark & Surgical Validation Results
+
+### A. Segmentation Performance (Validation Split, N=10)
+| Method | Architecture / Technique | Dice (DSC) | HD95 (mm) | ASD (mm) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Method 1 (Baseline)** | HU Windowing [200, 1800] + 3D Connected Component | $0.594 \pm 0.082$ | $67.71 \pm 33.92$ | $13.56 \pm 8.21$ |
+| **Method 2** | MONAI 3D Residual U-Net (AMP, Patch: 96x96x96) | *In training* | *In training* | *In training* |
+| **Method 3** | self-configuring nnU-Net v2 (3d_fullres) | *Preprocessed* | *Preprocessed* | *Preprocessed* |
+| **Method 4** | TotalSegmentator CT (Anatomical Foundation Model) | *Benchmarking* | *Benchmarking* | *Benchmarking* |
+
+### B. Orthopaedic Planning Biomarkers (Stage 1f - Validation Split, N=10)
+| Surgical Biomarker | Clinical Purpose | Mean ± Std | Range [Min, Max] | Reference Standard |
+| :--- | :--- | :--- | :--- | :--- |
+| **Femoral Head Diameter** | Acetabular cup / femoral head component sizing | $45.64 \pm 1.99$ mm | $[43.25, 49.04]$ mm | Adult female norm: $42 - 50$ mm |
+| **AMA Cut Angle** | Distal femoral resection planning in TKA | $7.73^\circ \pm 0.75^\circ$ | $[6.28^\circ, 8.78^\circ]$ | Orthopaedic target: $5^\circ - 8^\circ$ |
+| **Head Center Localization** | Landmark detection accuracy | $4.07 \pm 1.11$ mm | $[2.56, 6.02]$ mm | Manual palpation ground truth |
+
+### C. Rotational Radiographic Distortion Experiment (Stage 1g - Validation Split, N=10)
+Hypothesis: Patient internal/external rotation causes systematic angular bias in 2D radiographic deformity measurement.
+| Rotation Angle (°) | Mean 2D-vs-3D Angular Distortion | Std Dev | Distortion Range |
+| :---: | :---: | :---: | :---: |
+| **-20°** | $+1.67^\circ$ | $\pm 1.33^\circ$ | $[+0.19^\circ, +3.80^\circ]$ |
+| **-10°** | $+1.66^\circ$ | $\pm 0.63^\circ$ | $[+0.70^\circ, +2.65^\circ]$ |
+| **0° (Neutral AP)** | $+1.86^\circ$ | $\pm 0.77^\circ$ | $[+0.83^\circ, +3.36^\circ]$ |
+| **+10°** | $+2.24^\circ$ | $\pm 1.54^\circ$ | $[+0.31^\circ, +4.56^\circ]$ |
+| **+20°** | $+2.81^\circ$ | $\pm 2.35^\circ$ | $[+0.04^\circ, +5.86^\circ]$ |
+
+---
+
+## 5. Quickstart
 
 ### Environment Setup
 ```bash
@@ -82,17 +115,23 @@ git clone <repo-url>
 cd lower-limb-femur-study
 source .venv/bin/activate
 
-# Run metrics and geometry unit tests via pytest
+# Run all 8 unit tests via pytest
 pytest
 ```
 
-### Reproducing Baseline Results
+### Reproducing Analysis & Drills
 ```bash
-# 1. Inspect dataset
+# 1. Inspect cohort audit metrics
 python src/audit.py
 
-# 2. Run classical segmentation baseline on validation split
+# 2. Run classical segmentation baseline
 python src/classical_baseline.py val
+
+# 3. Extract orthopaedic surgical planning measurements
+python src/planning.py --split val
+
+# 4. Run simulated 2D radiographic projection experiment
+python src/xray_projection.py --split val
 ```
 
 ---
