@@ -1,21 +1,19 @@
 """
-HFValid to nnU-Net v2 Dataset Converter
-Formats the 101 whole-femur CT scans and voxelized masks into official
-nnU-Net v2 raw structure:
-  Dataset001_Femur/
-    ├── dataset.json
-    ├── imagesTr/  (PatXXX_0000.nii.gz for train + val)
-    ├── labelsTr/  (PatXXX.nii.gz)
-    ├── imagesTs/  (PatXXX_0000.nii.gz for test)
-    └── labelsTs/  (PatXXX.nii.gz)
+Write the nnU-Net v2 raw dataset (Dataset001_Femur): train and validation cases in
+imagesTr/labelsTr, test cases in imagesTs/labelsTs.
+
+    python src/convert_nnunet.py
 """
 
 import json
+import os
 import shutil
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 import SimpleITK as sitk
 from tqdm import tqdm
+
+DATA = os.environ.get("FEMUR_DATA", "data")
 
 
 def convert_single_case(task):
@@ -38,10 +36,10 @@ def convert_single_case(task):
 
 
 def convert_dataset_to_nnunet(
-    data_dir="/run/media/tonibirat/TOSHIBA_EXT/naamii-data/HFValid",
-    masks_dir="/run/media/tonibirat/TOSHIBA_EXT/naamii-data/HFValid/masks",
-    splits_json="/run/media/tonibirat/EA1AD7931AD75AE1/Projects/lower-limb-femur-study/splits.json",
-    nnunet_raw_dir="/run/media/tonibirat/TOSHIBA_EXT/naamii-data/nnunet/nnUNet_raw",
+    data_dir=os.path.join(DATA, "HFValid"),
+    masks_dir=os.path.join(DATA, "HFValid/masks"),
+    splits_json="splits.json",
+    nnunet_raw_dir=os.path.join(DATA, "nnunet/nnUNet_raw"),
     dataset_name="Dataset001_Femur",
     num_workers=4,
     overwrite=False

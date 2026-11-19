@@ -1,9 +1,7 @@
 """
-Patient-Level Dataset Splitting for HFValid Femur Study
-Generates a deterministic train / validation / test split with balanced laterality:
-- 71 Train subjects
-- 10 Validation subjects
-- 20 Test subjects (held out, evaluated exactly once)
+Deterministic patient-level split balanced by side: 71 train, 10 validation, 20 test.
+
+    python src/split_data.py [AUDIT_CSV] [OUT_JSON]
 """
 
 import json
@@ -69,6 +67,6 @@ def generate_splits(audit_csv_path, output_json_path, seed=42):
 
 if __name__ == "__main__":
     import sys
-    audit_csv = sys.argv[1] if len(sys.argv) > 1 else "/run/media/tonibirat/EA1AD7931AD75AE1/Projects/lower-limb-femur-study/hfvalid_audit.csv"
-    out_json = sys.argv[2] if len(sys.argv) > 2 else "/run/media/tonibirat/EA1AD7931AD75AE1/Projects/lower-limb-femur-study/splits.json"
+    audit_csv = sys.argv[1] if len(sys.argv) > 1 else "hfvalid_audit.csv"
+    out_json = sys.argv[2] if len(sys.argv) > 2 else "splits.json"
     generate_splits(audit_csv, out_json)

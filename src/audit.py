@@ -1,12 +1,8 @@
 """
-HFValid Dataset Audit Script
-Inspects all 101 whole-femur CT scans and outputs a comprehensive data quality report:
-- Dimensions (voxels: X, Y, Z)
-- Spacing (mm: dX, dY, dZ)
-- Origin and Direction Cosines
-- Intensity statistics (min, max, mean, HU range check)
-- Missing file verification (.nrrd, .stl, _palp.inp)
-- Ground-truth landmarks: femurHead, kneeCenter, greatTroch, headDir
+Header audit of all HFValid scans: size, spacing, origin, direction, HU range,
+missing files and landmark coordinates.
+
+    python src/audit.py [DATA_DIR] [OUT_CSV]
 """
 
 import os
@@ -16,6 +12,8 @@ import numpy as np
 import SimpleITK as sitk
 import pandas as pd
 from tabulate import tabulate
+
+DATA = os.environ.get("FEMUR_DATA", "data")
 
 
 def parse_palp_inp(inp_path):
@@ -143,7 +141,7 @@ def audit_hfvalid(data_dir, output_csv="hfvalid_audit.csv"):
 
     df = pd.DataFrame(records)
     df.to_csv(output_csv, index=False)
-    print(f"\nAudit complete! Saved {len(df)} records to {output_csv}")
+    print(f"\nSaved {len(df)} rows to {output_csv}")
     print("\nSummary Statistics:")
     print(tabulate(df.describe().T, headers="keys", tablefmt="github"))
     return df
@@ -151,6 +149,6 @@ def audit_hfvalid(data_dir, output_csv="hfvalid_audit.csv"):
 
 if __name__ == "__main__":
     import sys
-    data_dir = sys.argv[1] if len(sys.argv) > 1 else "/run/media/tonibirat/TOSHIBA_EXT/naamii-data/HFValid"
-    output_path = sys.argv[2] if len(sys.argv) > 2 else "/run/media/tonibirat/EA1AD7931AD75AE1/Projects/lower-limb-femur-study/hfvalid_audit.csv"
+    data_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(DATA, "HFValid")
+    output_path = sys.argv[2] if len(sys.argv) > 2 else "hfvalid_audit.csv"
     audit_hfvalid(data_dir, output_path)

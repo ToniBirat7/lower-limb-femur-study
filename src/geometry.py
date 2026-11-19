@@ -1,11 +1,5 @@
 """
-Computational Geometry Module (Drill D5)
-Implements robust geometric estimators:
-- Least-squares 3D sphere fit (femoral head diameter & center)
-- Principal 3D line fit via PCA/SVD (anatomical and neck axes)
-- 3D angle between lines
-- 2D projected angle on arbitrary planes (e.g., coronal plane projection)
-Includes self-verifying unit tests.
+Geometry helpers: least-squares sphere fit, SVD line fit, 3D and projected angles.
 """
 
 import numpy as np

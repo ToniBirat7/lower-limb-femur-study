@@ -4,38 +4,35 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lower-limb-femur-study"
-version = "0.1.0"
-description = "Quantitative 3D Lower-Limb CT Analysis, Landmark Detection, and Orthopaedic Surgical Planning"
+version = "1.0.0"
+description = "Femur segmentation, planning measurements, projection error and registration on HFValid CT"
 readme = "README.md"
 requires-python = ">=3.12"
-license = {text = "CC-BY-4.0"}
-authors = [
-    {name = "Birat Gautam"}
-]
+license = {text = "MIT"}
+authors = [{name = "Birat Gautam"}]
 dependencies = [
-    "torch>=2.4.0",
-    "monai>=1.4.0",
-    "nnunetv2>=2.5.0",
-    "totalsegmentator>=2.1.0",
-    "SimpleITK>=2.4.0",
-    "nibabel>=5.2.0",
-    "pydicom>=2.4.0",
-    "pyvista>=0.44.0",
-    "vtk>=9.3.0",
-    "scipy>=1.13.0",
-    "scikit-image>=0.24.0",
-    "pandas>=2.2.0",
-    "numpy>=1.26.0",
-    "tqdm>=4.66.0"
+    "torch>=2.4",
+    "monai>=1.4",
+    "nnunetv2>=2.5",
+    "TotalSegmentator>=2.1",
+    "SimpleITK>=2.4",
+    "nibabel>=5.2",
+    "pyvista>=0.44",
+    "vtk>=9.3",
+    "scipy>=1.13",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "matplotlib>=3.8",
+    "tabulate>=0.9",
+    "tqdm>=4.66",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0"
-]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools]
+packages = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-python_files = ["test_*.py"]
-python_functions = ["test_*"]

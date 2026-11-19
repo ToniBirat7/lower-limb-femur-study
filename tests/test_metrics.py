@@ -1,4 +1,4 @@
-"""Unit tests for clinical segmentation validation metrics (Dice, HD95, ASD)."""
+"""Tests for Dice, HD95 and ASD."""
 
 import numpy as np
 import pytest

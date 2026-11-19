@@ -1,4 +1,4 @@
-"""Unit tests for computational geometry (sphere fit, SVD axis fit, 3D angle projection)."""
+"""Tests for sphere fit, line fit and angles."""
 
 import numpy as np
 import pytest

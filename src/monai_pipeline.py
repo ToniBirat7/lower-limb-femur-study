@@ -1,262 +1,220 @@
 """
-MONAI 3D Residual U-Net Pipeline (Method 2)
-Implements:
-- 3D Residual U-Net for whole-femur CT segmentation
-- Memory-efficient mixed precision (AMP) and patch-based training
-- Sliding-window inference (monai.inferers.sliding_window_inference)
-- Evaluation on validation and test splits with Dice and HD95 metrics
+MONAI 3D U-Net (residual units) for femur segmentation.
+
+Images are reoriented to RAS, resampled to 1.5 mm, clipped to [-200, 1500] HU
+and scaled to [0, 1]. Training uses 96^3 patches on a 6 GB GPU with bfloat16
+mixed precision (float16 overflowed to NaN on some patches); inference uses
+sliding windows and maps the prediction back to the original CT grid.
+
+    python src/monai_pipeline.py --mode sanity            # overfit two cases
+    python src/monai_pipeline.py --mode train --hours 2
+    python src/monai_pipeline.py --mode predict --split test
 """
 
-import os
-import sys
-import json
 import argparse
+import sys
+import time
 from pathlib import Path
 
-# Ensure repo root is on sys.path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import torch
+import nibabel as nib
 import numpy as np
-import SimpleITK as sitk
-from tqdm import tqdm
-
-import monai
-from monai.networks.nets import UNet
-from monai.networks.layers import Norm
-from monai.losses import DiceCELoss
+import torch
+from monai.data import CacheDataset, DataLoader, Dataset, decollate_batch
 from monai.inferers import sliding_window_inference
+from monai.losses import DiceCELoss
+from monai.networks.layers import Norm
+from monai.networks.nets import UNet
 from monai.transforms import (
+    AsDiscreted,
     Compose,
-    LoadImaged,
     EnsureChannelFirstd,
+    EnsureTyped,
+    Invertd,
+    LoadImaged,
     Orientationd,
-    Spacingd,
-    ScaleIntensityRanged,
     RandCropByPosNegLabeld,
     RandFlipd,
-    RandRotated,
-    EnsureTyped,
-    Activations,
-    AsDiscrete,
+    RandScaleIntensityd,
+    RandShiftIntensityd,
+    ScaleIntensityRanged,
+    Spacingd,
 )
-from monai.data import Dataset, DataLoader
+from monai.utils import set_determinism
 
-from src.metrics import evaluate_case
+from src.config import NNUNET_RAW, RESULTS_DIR, WEIGHTS_DIR, load_splits, mask_path, prediction_path
 
-# Default paths
-DATA_DIR = Path("/run/media/tonibirat/TOSHIBA_EXT/naamii-data")
-RAW_IMG_DIR = DATA_DIR / "nnunet" / "nnUNet_raw" / "Dataset001_Femur" / "imagesTr"
-RAW_LBL_DIR = DATA_DIR / "nnunet" / "nnUNet_raw" / "Dataset001_Femur" / "labelsTr"
-RAW_TS_IMG_DIR = DATA_DIR / "nnunet" / "nnUNet_raw" / "Dataset001_Femur" / "imagesTs"
-RAW_TS_LBL_DIR = DATA_DIR / "nnunet" / "nnUNet_raw" / "Dataset001_Femur" / "labelsTs"
-SPLITS_PATH = Path(__file__).resolve().parent.parent / "splits.json"
-WEIGHTS_DIR = Path("/run/media/tonibirat/TOSHIBA_EXT/weights/monai")
+METHOD = "monai"
+PATCH = (96, 96, 96)
+CKPT = WEIGHTS_DIR / "monai" / "unet_best.pt"
 
 
-def get_case_files(subject_id, is_test=False):
-    """Returns image and label file paths for a given subject ID."""
-    if is_test:
-        img_path = RAW_TS_IMG_DIR / f"{subject_id}_0000.nii.gz"
-        lbl_path = RAW_TS_LBL_DIR / f"{subject_id}.nii.gz"
-    else:
-        img_path = RAW_IMG_DIR / f"{subject_id}_0000.nii.gz"
-        lbl_path = RAW_LBL_DIR / f"{subject_id}.nii.gz"
-    
-    if not img_path.exists():
-        # Fallback to HFValid raw directory
-        img_path = DATA_DIR / "HFValid" / "Subjects" / subject_id / f"{subject_id}.nrrd"
-        lbl_path = DATA_DIR / "HFValid" / "masks" / f"{subject_id}_mask.nii.gz"
-
-    return {"image": str(img_path), "label": str(lbl_path), "subject_id": subject_id}
+def case(cid, split):
+    folder = "imagesTs" if split == "test" else "imagesTr"
+    return {"image": str(NNUNET_RAW / folder / f"{cid}_0000.nii.gz"), "label": str(mask_path(cid)), "id": cid}
 
 
-def build_transforms(spatial_size=(96, 96, 96), is_train=True):
-    """Builds MONAI data preprocessing and augmentation pipeline."""
-    common_transforms = [
-        LoadImaged(keys=["image", "label"]),
-        EnsureChannelFirstd(keys=["image", "label"]),
-        Orientationd(keys=["image", "label"], axcodes="RAS"),
-        Spacingd(
-            keys=["image", "label"],
-            pixdim=(1.5, 1.5, 1.5),
-            mode=("bilinear", "nearest"),
-        ),
-        ScaleIntensityRanged(
-            keys=["image"],
-            a_min=-100.0,
-            a_max=1500.0,
-            b_min=0.0,
-            b_max=1.0,
-            clip=True,
-        ),
+def base_transforms(keys):
+    return [
+        LoadImaged(keys=keys),
+        EnsureChannelFirstd(keys=keys),
+        Orientationd(keys=keys, axcodes="RAS"),
+        Spacingd(keys=keys, pixdim=(1.5, 1.5, 1.5), mode=("bilinear", "nearest")[: len(keys)]),
+        ScaleIntensityRanged(keys=["image"], a_min=-200.0, a_max=1500.0, b_min=0.0, b_max=1.0, clip=True),
     ]
 
-    if is_train:
-        train_transforms = common_transforms + [
-            RandCropByPosNegLabeld(
-                keys=["image", "label"],
-                label_key="label",
-                spatial_size=spatial_size,
-                pos=2,
-                neg=1,
-                num_samples=2,
-                image_key="image",
-                image_threshold=0,
-            ),
-            RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
-            RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
-            RandRotated(
-                keys=["image", "label"],
-                range_x=0.2,
-                prob=0.3,
-                mode=("bilinear", "nearest"),
-            ),
-            EnsureTyped(keys=["image", "label"]),
-        ]
-        return Compose(train_transforms)
-    else:
-        val_transforms = common_transforms + [
-            EnsureTyped(keys=["image", "label"]),
-        ]
-        return Compose(val_transforms)
+
+def train_transforms():
+    return Compose(base_transforms(["image", "label"]) + [
+        RandCropByPosNegLabeld(keys=["image", "label"], label_key="label", spatial_size=PATCH,
+                               pos=2, neg=1, num_samples=2, image_key="image", image_threshold=0),
+        RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
+        RandScaleIntensityd(keys="image", factors=0.1, prob=0.3),
+        RandShiftIntensityd(keys="image", offsets=0.05, prob=0.3),
+        EnsureTyped(keys=["image", "label"]),
+    ])
+
+
+def eval_transforms():
+    return Compose(base_transforms(["image", "label"]) + [EnsureTyped(keys=["image", "label"])])
 
 
 def build_model(device):
-    """Constructs 3D Residual U-Net optimized for 6GB RTX 3060 VRAM."""
-    model = UNet(
-        spatial_dims=3,
-        in_channels=1,
-        out_channels=2,
-        channels=(16, 32, 64, 128, 256),
-        strides=(2, 2, 2, 2),
-        num_res_units=2,
-        norm=Norm.BATCH,
+    return UNet(
+        spatial_dims=3, in_channels=1, out_channels=2,
+        channels=(16, 32, 64, 128, 256), strides=(2, 2, 2, 2),
+        num_res_units=2, norm=Norm.INSTANCE,
     ).to(device)
-    return model
 
 
-def run_sanity_check(device):
-    """Runs a quick 5-epoch overfitting sanity check on 2 subjects."""
-    print("Running MONAI 3D U-Net sanity check on 2 cases...")
-    with open(SPLITS_PATH) as f:
-        splits = json.load(f)
+def dice_of(pred, label):
+    p, g = pred.bool(), label.bool()
+    return (2.0 * (p & g).sum() / (p.sum() + g.sum() + 1e-6)).item()
 
-    sanity_cases = splits["val"][:2]
-    data_dicts = [get_case_files(c) for c in sanity_cases]
 
-    transforms = build_transforms(is_train=True)
-    ds = Dataset(data=data_dicts, transform=transforms)
-    loader = DataLoader(ds, batch_size=2, shuffle=True)
+def validate(model, loader, device):
+    model.eval()
+    scores = []
+    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
+        for batch in loader:
+            logits = sliding_window_inference(batch["image"].to(device), PATCH, 4, model, overlap=0.25)
+            scores.append(dice_of(logits.argmax(1, keepdim=True), batch["label"].to(device)))
+    return float(np.mean(scores))
+
+
+def train(hours, max_epochs, device, cases_train, cases_val, val_every=10):
+    set_determinism(seed=0)
+    CKPT.parent.mkdir(parents=True, exist_ok=True)
+    train_ds = CacheDataset([case(c, "train") for c in cases_train], train_transforms(), cache_rate=1.0, num_workers=6)
+    val_ds = CacheDataset([case(c, "val") for c in cases_val], eval_transforms(), cache_rate=1.0, num_workers=4)
+    train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=4)
+    val_loader = DataLoader(val_ds, batch_size=1, num_workers=2)
 
     model = build_model(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    opt = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-5)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max_epochs)
     loss_fn = DiceCELoss(to_onehot_y=True, softmax=True)
 
-    model.train()
-    for epoch in range(1, 6):
-        epoch_loss = 0.0
-        for batch in loader:
-            imgs = batch["image"].to(device)
-            lbls = batch["label"].to(device)
-            optimizer.zero_grad()
-            preds = model(imgs)
-            loss = loss_fn(preds, lbls)
-            loss.backward()
-            optimizer.step()
-            epoch_loss += loss.item()
-        print(f"  Sanity Epoch {epoch}/5 - Loss: {epoch_loss / len(loader):.4f}")
-
-    print("Sanity check passed successfully! Model trains and gradients backpropagate.\n")
-
-
-def train(epochs=50, batch_size=2, device="cuda"):
-    """Trains 3D Residual U-Net on training split."""
-    WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
-    dev = torch.device(device if torch.cuda.is_available() else "cpu")
-    print(f"Training MONAI 3D U-Net on {dev} for {epochs} epochs...")
-
-    with open(SPLITS_PATH) as f:
-        splits = json.load(f)
-
-    train_files = [get_case_files(c) for c in splits["train"]]
-    val_files = [get_case_files(c) for c in splits["val"]]
-
-    train_ds = Dataset(data=train_files, transform=build_transforms(is_train=True))
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2)
-
-    val_ds = Dataset(data=val_files, transform=build_transforms(is_train=False))
-    val_loader = DataLoader(val_ds, batch_size=1, num_workers=1)
-
-    model = build_model(dev)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-5)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    loss_fn = DiceCELoss(to_onehot_y=True, softmax=True)
-    scaler = torch.amp.GradScaler("cuda", enabled=(dev.type == "cuda"))
-
-    best_val_dice = 0.0
-    best_model_path = WEIGHTS_DIR / "best_monai_unet.pth"
-
-    for epoch in range(1, epochs + 1):
+    log = []
+    best, start = -1.0, time.time()
+    for epoch in range(1, max_epochs + 1):
         model.train()
-        train_loss = 0.0
-        for batch in tqdm(train_loader, desc=f"Epoch {epoch}/{epochs} [Train]"):
-            imgs, lbls = batch["image"].to(dev), batch["label"].to(dev)
-            optimizer.zero_grad()
-            with torch.amp.autocast("cuda", enabled=(dev.type == "cuda")):
-                preds = model(imgs)
-                loss = loss_fn(preds, lbls)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-            train_loss += loss.item()
+        total = 0.0
+        for batch in train_loader:
+            x, y = batch["image"].to(device), batch["label"].to(device)
+            opt.zero_grad(set_to_none=True)
+            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
+                logits = model(x)
+            loss = loss_fn(logits.float(), y)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 12.0)
+            opt.step()
+            total += loss.item()
+        sched.step()
+        row = {"epoch": epoch, "train_loss": total / len(train_loader), "minutes": (time.time() - start) / 60}
+        out_of_time = (time.time() - start) / 3600 > hours
+        if epoch % val_every == 0 or epoch == max_epochs or out_of_time:
+            row["val_dice"] = validate(model, val_loader, device)
+            if row["val_dice"] > best:
+                best = row["val_dice"]
+                torch.save(model.state_dict(), CKPT)
+        log.append(row)
+        print(", ".join(f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}" for k, v in row.items()), flush=True)
+        if out_of_time:
+            print(f"time budget of {hours} h reached")
+            break
+    RESULTS_DIR.mkdir(exist_ok=True)
+    import pandas as pd
 
-        scheduler.step()
-        train_loss /= len(train_loader)
+    pd.DataFrame(log).to_csv(RESULTS_DIR / "monai_training_log.csv", index=False)
+    print(f"best validation Dice {best:.4f}, checkpoint {CKPT}")
 
-        # Validation every 5 epochs
-        if epoch % 5 == 0 or epoch == epochs:
-            model.eval()
-            val_dices = []
-            with torch.no_grad():
-                for batch in val_loader:
-                    v_imgs = batch["image"].to(dev)
-                    v_lbls = batch["label"].to(dev)
-                    with torch.amp.autocast("cuda", enabled=(dev.type == "cuda")):
-                        v_preds = sliding_window_inference(
-                            v_imgs, (96, 96, 96), 2, model, overlap=0.25
-                        )
-                    pred_label = torch.argmax(v_preds, dim=1, keepdim=True)
-                    # Compute Dice
-                    intersect = ((pred_label == 1) & (v_lbls == 1)).sum().float()
-                    cardinality = (pred_label == 1).sum().float() + (v_lbls == 1).sum().float()
-                    dice = (2.0 * intersect / (cardinality + 1e-6)).item()
-                    val_dices.append(dice)
 
-            mean_val_dice = float(np.mean(val_dices))
-            print(f"Epoch {epoch}/{epochs} - Train Loss: {train_loss:.4f} - Val Dice: {mean_val_dice:.4f}")
+def predict(split, device):
+    pre = Compose(base_transforms(["image"]) + [EnsureTyped(keys=["image"])])
+    post = Compose([
+        Invertd(keys="pred", transform=pre, orig_keys="image", nearest_interp=False, to_tensor=True),
+        AsDiscreted(keys="pred", argmax=True),
+    ])
+    cases = load_splits()[split]
+    ds = Dataset([{"image": case(c, split)["image"], "id": c} for c in cases], pre)
+    loader = DataLoader(ds, batch_size=1, num_workers=2)
 
-            if mean_val_dice > best_val_dice:
-                best_val_dice = mean_val_dice
-                torch.save(model.state_dict(), best_model_path)
-                print(f"  -> Saved new best model to {best_model_path} (Dice: {best_val_dice:.4f})")
+    model = build_model(device)
+    model.load_state_dict(torch.load(CKPT, map_location=device))
+    model.eval()
+    with torch.no_grad():
+        for batch in loader:
+            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
+                batch["pred"] = sliding_window_inference(batch["image"].to(device), PATCH, 4, model, overlap=0.5)
+            for item in decollate_batch(batch):
+                item["pred"] = item["pred"].float().cpu()
+                item = post(item)
+                pred = item["pred"][0].numpy().astype(np.uint8)
+                affine = item["pred"].meta["affine"].numpy()
+                out = prediction_path(METHOD, item["id"])
+                out.parent.mkdir(parents=True, exist_ok=True)
+                nib.save(nib.Nifti1Image(pred, affine), str(out))
+                print(f"  {item['id']} -> {out}", flush=True)
+
+
+def sanity(device):
+    """Overfit two validation cases: the loss must fall well below its starting value."""
+    ids = load_splits()["val"][:2]
+    ds = CacheDataset([case(c, "val") for c in ids], train_transforms(), cache_rate=1.0)
+    loader = DataLoader(ds, batch_size=2, shuffle=True)
+    model = build_model(device)
+    opt = torch.optim.AdamW(model.parameters(), lr=2e-3)
+    loss_fn = DiceCELoss(to_onehot_y=True, softmax=True)
+    for epoch in range(1, 41):
+        for batch in loader:
+            opt.zero_grad()
+            loss = loss_fn(model(batch["image"].to(device)), batch["label"].to(device))
+            loss.backward()
+            opt.step()
+        if epoch % 10 == 0:
+            print(f"epoch {epoch}: loss {loss.item():.4f}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MONAI 3D Residual U-Net pipeline")
-    parser.add_argument("--mode", choices=["sanity", "train", "val", "test"], default="sanity")
-    parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser = argparse.ArgumentParser(description="MONAI 3D U-Net")
+    parser.add_argument("--mode", choices=["sanity", "train", "predict"], default="sanity")
+    parser.add_argument("--hours", type=float, default=2.0, help="training time budget")
+    parser.add_argument("--epochs", type=int, default=300)
+    parser.add_argument("--split", choices=["val", "test"], default="test")
     args = parser.parse_args()
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    splits = load_splits()
     if args.mode == "sanity":
-        dev = torch.device(args.device)
-        run_sanity_check(dev)
+        sanity(device)
     elif args.mode == "train":
-        train(epochs=args.epochs, batch_size=args.batch_size, device=args.device)
+        train(args.hours, args.epochs, device, splits["train"], splits["val"])
+    else:
+        predict(args.split, device)
 
 
 if __name__ == "__main__":

@@ -1,142 +1,146 @@
-# Quantitative 3D Lower-Limb CT Analysis & Surgical Planning
+# lower-limb-femur-study
 
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-EE4C2C?logo=pytorch)](https://pytorch.org/)
-[![MONAI](https://img.shields.io/badge/MONAI-1.6.1-008080)](https://monai.io/)
-[![nnU--Net](https://img.shields.io/badge/nnU--Net-v2.8.1-blue)](https://github.com/MIC-DKFZ/nnUNet)
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
+Femur segmentation and planning measurements on 101 public CT scans (HFValid v3), with two follow-up experiments: how leg rotation distorts the neck-shaft angle on a front-view radiograph, and how well femurs from different patients can be registered.
 
-An end-to-end clinical engineering study on **3D bone segmentation, anatomical landmark detection, orthopaedic resection planning, and 2D-versus-3D radiographic projection analysis** on 101 whole-femur CT scans from the HFValid cohort.
+Questions:
 
-Developed for research translation aligned with the **Nepal Applied Mathematics and Informatics Institute for Research (NAAMII)** Multimodal Medical Data Analysis for Precision Medicine (MAPMED) platform.
+1. How do a threshold baseline, a MONAI 3D U-Net, nnU-Net v2 and TotalSegmentator compare on the same held-out patients?
+2. Do planning measurements taken on predicted masks agree with the same measurements on the reference surfaces?
+3. How large is the neck-shaft angle error on a simulated radiograph when the leg is rotated?
+4. What landmark error remains after rigid, affine and surface registration between patients?
 
----
+## Data
 
-## 1. Study Highlights & Clinical Objectives
+101 femur CTs from older women, each with a reference surface (STL) and four landmarks.
+Three scanner models, slice thickness 2.5 to 5 mm reconstructed at a 1 to 2 mm step.
+Details and quality checks: [docs/DATA_CARD.md](docs/DATA_CARD.md).
 
-1. **Benchmark 4 Segmentation Methods on Identical Clinical Test Split:**
-   - Classical intensity windowing ($[200, 1800]$ HU) + 3D connected components + morphology.
-   - Custom 3D U-Net with residual units and mixed-precision sliding-window inference (MONAI).
-   - Self-configuring deep network (`nnU-Net v2 3d_fullres`).
-   - Out-of-the-box anatomical foundation model (`TotalSegmentator CT`).
-2. **Clinical Metric Rigor:**
-   - Evaluated using Dice Similarity Coefficient (DSC), 95th Percentile Hausdorff Distance (HD95 in mm), and Average Surface Distance (ASD in mm).
-   - Paired non-parametric Wilcoxon signed-rank significance testing and bootstrap 95% confidence intervals.
-3. **Orthopaedic Planning Measurements (Stage 1f):**
-   - **Femoral Head Diameter:** Least-squares sphere fitting for hip arthroplasty implant sizing.
-   - **Collo-Diaphyseal / Neck-Shaft Angle (CCD):** Measured between the 3D femoral neck vector and the anatomical shaft axis.
-   - **Femoral Anteversion:** Rotational torsion angle in the plane orthogonal to the diaphysis.
-   - **Mechanical-Anatomical Angle (AMA):** Used clinically to set the distal femoral cut angle in total knee arthroplasty (resection planning).
-   - Predicted meshes validated against ground-truth meshes with Bland-Altman agreement analysis.
-4. **Hypothesis-Driven 2D vs. 3D Radiographic Distortion Experiment (Stage 1g):**
-   - Digitally forward-projected CT volumes into simulated front-view radiographs across rotational angles ($-20^\circ$ to $+20^\circ$).
-   - Quantifies the clinical risk of rotational malposition on 2D radiographic deformity measurement.
+Reference masks are the STL surfaces voxelised on each CT grid.
+Patient-level split: 71 train, 10 validation, 20 test.
+Everything was tuned on validation; the test set was scored once.
 
----
+## Results
 
-## 2. Dataset Overview: HFValid Cohort v3
+### 1. Segmentation (test, 20 patients)
 
-- **Cohort:** 101 female patients ($72.4 \pm 7.1$ years, range 55 to 88) scanned at IRCCS Istituto Ortopedico Rizzoli (IOR), Italy.
-- **Scanners:** GE Medical Systems (BrightSpeed, HiSpeed CT/i, LightSpeed16).
-- **In-Plane Spacing:** $0.764 \pm 0.061$ mm ($0.586$ to $0.977$ mm).
-- **Slice Thickness:** $1.0$ to $2.0$ mm ($1.83 \pm 0.27$ mm).
-- **Ground Truth:** Calibrated CT scans (`.nrrd`), expert surface meshes (`.stl`), and four clinical landmarks (`femurHead`, `headDir`, `greatTroch`, `kneeCenter` in `_palp.inp`).
+| Method | Dice | HD95 (mm) | ASD (mm) |
+|---|---|---|---|
+| Threshold baseline (200 to 2000 HU, largest component, hole filling) | 0.672 ± 0.084 | 97.2 ± 36.8 | 27.1 ± 16.1 |
+| TotalSegmentator `total`, 1.5 mm model, no training | 0.927 ± 0.075 | 11.0 ± 32.2 (median 2.0) | 2.37 ± 6.30 (median 0.71) |
+| MONAI 3D U-Net, 1.5 mm | MONAI_TEST_DICE | MONAI_TEST_HD | MONAI_TEST_ASD |
+| nnU-Net v2 `3d_fullres`, 100 epochs | 0.990 ± 0.008 | 7.2 ± 28.6 (median 0.78) | 0.71 ± 2.44 (median 0.13) |
 
-Detailed dataset documentation: [`docs/DATA_CARD.md`](docs/DATA_CARD.md).
+Mean ± SD over patients; bootstrap 95% intervals and per-patient scores are in `results/`.
+nnU-Net beats TotalSegmentator on all three metrics (paired Wilcoxon, p < 0.002).
 
----
+- The threshold baseline cannot separate the femur from the pelvis at the hip and from the tibia at the knee, which gives the large surface distances.
+- TotalSegmentator is good on most patients but fails on two (Dice 0.65 and 0.79) by stopping short of the knee: in Pat084 it misses the distal 40% of the femur's length.
+- nnU-Net's mean HD95 comes from one patient (Pat027): a separate 22 ml region near the midline, probably at the other hip. Keeping only the largest connected component gives Dice 0.986 and HD95 1.4 mm for that patient. This step was not chosen on validation (no validation case needed it), so the table reports the raw output.
 
-## 3. Repository Structure
+### 2. Planning measurements
 
-```text
-├── src/
-│   ├── __init__.py             # Python package indicator
-│   ├── audit.py                # 101-scan dataset audit and data card generator
-│   ├── voxelize.py             # Parallel STL-to-mask voxelization (VTK / SimpleITK)
-│   ├── split_data.py           # Deterministic patient-level train/val/test split
-│   ├── metrics.py              # Unit-tested Dice, HD95 (mm), and ASD (mm)
-│   ├── geometry.py             # Least-squares sphere fit, line fit, 3D angle projection
-│   ├── classical_baseline.py   # HU windowing + 3D connected component baseline
-│   ├── convert_nnunet.py       # nnU-Net v2 raw dataset formatter (Dataset001_Femur)
-│   ├── planning.py             # Implant sizing & resection angle calculations (1f)
-│   └── xray_projection.py      # 2D projection & rotational error experiment (1g)
-├── tests/
-│   ├── test_geometry.py                # Computational geometry unit tests (pytest)
-│   ├── test_metrics.py                 # Segmentation metric unit tests (pytest)
-│   └── test_planning_and_projection.py # Surgical planning & X-ray projection tests (pytest)
-├── docs/
-│   ├── DATA_CARD.md                    # Clinical dataset profile & imaging characteristics
-│   └── SETUP.md                        # Environment activation and reproduction guide
-├── pyproject.toml                      # Build config, dependencies & test specifications
-├── splits.json                         # Patient-level split (71 train / 10 val / 20 test)
-├── hfvalid_audit.csv                   # Full audit metrics for all 101 subjects
-├── classical_baseline_results.csv      # Baseline validation results (DSC: 0.594)
-├── planning_measurements.csv           # Orthopaedic surgical measurements (Val set)
-├── xray_projection_results.csv         # 2D vs 3D angular projection results (Val set)
-└── README.md                           # Project overview & clinical results
+Measured on the reference surfaces of all 101 femurs (`src/planning.py`):
+
+| Measurement | Method | Mean ± SD (range) |
+|---|---|---|
+| Head diameter | Trimmed least-squares sphere fit | 44.6 ± 3.1 mm (38.6 to 54.5) |
+| Head centre vs dataset landmark | Distance | 0.60 ± 0.30 mm (max 1.9) |
+| Neck-shaft angle | Head centre to the narrowest neck section, against the shaft axis | 124.3 ± 7.8 degrees (101.7 to 148.4) |
+| Anteversion | Neck axis against the posterior condylar axis, in the plane perpendicular to the mechanical axis | 7.1 ± 11.7 degrees (-21.6 to 26.8) |
+| Mechanical-anatomical angle | Head-to-knee line against the mid-shaft axis | 8.0 ± 1.2 degrees |
+
+Agreement on the 20 test patients, measured on a mesh built from each predicted mask (marching cubes, then Taubin smoothing) against the reference surface:
+
+| Source of the mesh | Head diameter | Neck-shaft angle | Anteversion | AMA |
+|---|---|---|---|---|
+| Reference mask (control) | 0.09 mm | 0.53 (median 0.37) | 0.97 (median 0.49) | 0.03 |
+| nnU-Net | 0.18 mm | 1.36 (median 0.80) | 2.99 (median 0.98) | 0.03 |
+| TotalSegmentator | 0.66 mm | 1.12 (median 0.65) | 2.59 (median 1.78), 18 of 20 | 0.13 |
+| Threshold baseline | 7.74 mm | 12 of 20 measured, median 22 | 12 of 20 measured, median 30 | 3.45 |
+
+Mean absolute difference, angles in degrees; Bland-Altman bias and limits are in `results/planning_agreement_test.csv`.
+The control row shows the error added by going through a voxel mask at all.
+The threshold masks include parts of the pelvis, which pulls the head fit off the femur.
+
+Without smoothing, voxel steps on the neck made the neck-axis fit fail on at least 5 of the 20 reference masks.
+The largest differences for both models come from one femur (Pat058).
+Its nnU-Net mask has Dice 0.99 and HD95 0.8 mm, yet the neck-shaft angle moves by 11.5 degrees and anteversion by 33 degrees: the narrowest-section search settles on a different neck section after a small surface change.
+High overlap scores therefore do not guarantee a stable angle, and the neck-axis method needs a stability check before clinical use.
+
+### 3. Neck-shaft angle on a simulated radiograph
+
+Each femur's 3D neck and shaft axes are placed in a femoral frame (mechanical axis and posterior condylar axis), rotated about the mechanical axis, and projected onto a front-view detector plane (`src/xray_projection.py`).
+
+![Projected minus 3D neck-shaft angle](figures/xray_projection_error.png)
+
+| Leg rotation | Projected minus 3D angle (101 femurs) |
+|---|---|
+| 30 degrees external | +12.9 ± 4.7 |
+| 20 degrees external | +8.0 ± 3.5 |
+| Neutral (knee forward) | +1.9 ± 1.6 |
+| 15 to 20 degrees internal | +0.2 ± 0.5 |
+
+With the knee facing forward the radiograph overstates the angle by about 2 degrees, and by 8 degrees at 20 degrees of external rotation.
+The error is smallest at 15 to 20 degrees of internal rotation, and the rotation that minimises it rises with the femur's anteversion (r = 0.48).
+This matches the clinical practice of rotating the leg internally for a hip radiograph.
+The experiment uses parallel projection of the measured axes, so it isolates rotation and ignores beam divergence and soft-tissue overlap.
+
+`figures/drr_Pat003.png` shows a simulated radiograph (CT projected along the anterior-posterior direction) at three rotations.
+
+### 4. Registration between patients
+
+Ten same-side pairs (validation to test), scored by the mean distance between the transformed head, greater trochanter and knee landmarks (`src/registration.py`):
+
+| Method | Landmark error, mean ± SD (mm) | Median |
+|---|---|---|
+| None | 87.2 ± 68.5 | 55.6 |
+| Centre-of-mass alignment of the masks | 25.5 ± 7.3 | 24.2 |
+| Rigid, CT, Mattes mutual information | 17.2 ± 12.4 | 13.5 |
+| Rigid, smoothed masks, mean squares | 15.7 ± 9.4 | 14.6 |
+| Affine, smoothed masks | 14.7 ± 10.7 | 14.3 |
+| Rigid ICP on surfaces (VTK) | 14.1 ± 8.0 | 13.9 |
+
+Different femurs differ in length and shape, so part of the remaining 14 mm is real anatomy, not registration error.
+As a check of the registration code, each of 10 CTs was moved by a known rigid transform (rotations of 4 to 8 degrees, a 21 mm shift) and registered back: landmark error fell from 34.8 mm to 0.03 mm (max 0.05).
+
+## Repository
+
+```
+src/
+  config.py              paths (set FEMUR_DATA)
+  audit.py               header audit of all scans
+  voxelize.py            STL to mask on the CT grid
+  split_data.py          patient-level split
+  data_quality.py        checks before training
+  convert_nnunet.py      nnU-Net raw dataset
+  classical_baseline.py  threshold baseline
+  monai_pipeline.py      MONAI 3D U-Net: train, predict
+  totalseg_pipeline.py   TotalSegmentator femur masks
+  metrics.py             Dice, HD95, ASD in mm
+  evaluate.py            scoring, bootstrap intervals, paired tests
+  geometry.py            sphere and line fits
+  planning.py            planning measurements
+  planning_agreement.py  predicted vs reference measurements
+  xray_projection.py     rotation experiment and simulated radiograph
+  registration.py        SimpleITK and VTK registration with landmark error
+tests/                   unit tests on synthetic data (pytest)
+results/                 per-patient and summary CSVs
+figures/
+splits.json
 ```
 
----
+Reproduction steps: [docs/SETUP.md](docs/SETUP.md).
 
-## 4. Benchmark & Surgical Validation Results
+## Limitations
 
-### A. Segmentation Performance (Validation Split, N=10)
-| Method | Architecture / Technique | Dice (DSC) | HD95 (mm) | ASD (mm) |
-| :--- | :--- | :--- | :--- | :--- |
-| **Method 1 (Baseline)** | HU Windowing [200, 1800] + 3D Connected Component | $0.594 \pm 0.082$ | $67.71 \pm 33.92$ | $13.56 \pm 8.21$ |
-| **Method 2** | MONAI 3D Residual U-Net (AMP, Patch: 96x96x96) | *In training* | *In training* | *In training* |
-| **Method 3** | self-configuring nnU-Net v2 (3d_fullres) | *Preprocessed* | *Preprocessed* | *Preprocessed* |
-| **Method 4** | TotalSegmentator CT (Anatomical Foundation Model) | *Benchmarking* | *Benchmarking* | *Benchmarking* |
+- One dataset from one centre, older women only, no external test set.
+- Reference surfaces come from a single expert segmentation; there is no second reader to give an inter-observer range.
+- Planning angles depend on the axis definitions used here and were not compared with clinicians' measurements.
+- The radiograph experiment projects axes, not images, and models rotation only.
+- 20 test patients give wide intervals for anything but the large differences.
 
-### B. Orthopaedic Planning Biomarkers (Stage 1f - Validation Split, N=10)
-| Surgical Biomarker | Clinical Purpose | Mean ± Std | Range [Min, Max] | Reference Standard |
-| :--- | :--- | :--- | :--- | :--- |
-| **Femoral Head Diameter** | Acetabular cup / femoral head component sizing | $45.64 \pm 1.99$ mm | $[43.25, 49.04]$ mm | Adult female norm: $42 - 50$ mm |
-| **AMA Cut Angle** | Distal femoral resection planning in TKA | $7.73^\circ \pm 0.75^\circ$ | $[6.28^\circ, 8.78^\circ]$ | Orthopaedic target: $5^\circ - 8^\circ$ |
-| **Head Center Localization** | Landmark detection accuracy | $4.07 \pm 1.11$ mm | $[2.56, 6.02]$ mm | Manual palpation ground truth |
+## Data and licence
 
-### C. Rotational Radiographic Distortion Experiment (Stage 1g - Validation Split, N=10)
-Hypothesis: Patient internal/external rotation causes systematic angular bias in 2D radiographic deformity measurement.
-| Rotation Angle (°) | Mean 2D-vs-3D Angular Distortion | Std Dev | Distortion Range |
-| :---: | :---: | :---: | :---: |
-| **-20°** | $+1.67^\circ$ | $\pm 1.33^\circ$ | $[+0.19^\circ, +3.80^\circ]$ |
-| **-10°** | $+1.66^\circ$ | $\pm 0.63^\circ$ | $[+0.70^\circ, +2.65^\circ]$ |
-| **0° (Neutral AP)** | $+1.86^\circ$ | $\pm 0.77^\circ$ | $[+0.83^\circ, +3.36^\circ]$ |
-| **+10°** | $+2.24^\circ$ | $\pm 1.54^\circ$ | $[+0.31^\circ, +4.56^\circ]$ |
-| **+20°** | $+2.81^\circ$ | $\pm 2.35^\circ$ | $[+0.04^\circ, +5.86^\circ]$ |
-
----
-
-## 5. Quickstart
-
-### Environment Setup
-```bash
-# Clone and activate Python 3.12 environment
-git clone <repo-url>
-cd lower-limb-femur-study
-source .venv/bin/activate
-
-# Run all 8 unit tests via pytest
-pytest
-```
-
-### Reproducing Analysis & Drills
-```bash
-# 1. Inspect cohort audit metrics
-python src/audit.py
-
-# 2. Run classical segmentation baseline
-python src/classical_baseline.py val
-
-# 3. Extract orthopaedic surgical planning measurements
-python src/planning.py --split val
-
-# 4. Run simulated 2D radiographic projection experiment
-python src/xray_projection.py --split val
-```
-
----
-
-## 5. Methodological & Regulatory Standards
-- **CLAIM Compliance:** Structured according to the 2024 RSNA Checklist for Artificial Intelligence in Medical Imaging.
-- **Zero Leakage:** Strictly disjoint patient-level partitioning; test set evaluated once.
-- **Traceability:** Software lifecycle standards aligned with IEC 62304 and FDA 510(k) verification principles.
+HFValid v3: [10.6092/unibo/amsacta/8431](https://doi.org/10.6092/unibo/amsacta/8431), CC BY 4.0.
+No images, masks or meshes are included here.
+Code: MIT.

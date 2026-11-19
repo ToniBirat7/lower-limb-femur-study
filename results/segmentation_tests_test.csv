@@ -1,0 +1,7 @@
+comparison,metric,n,median_difference,p_value
+nnunet vs classical,Dice,20,0.3441,1.9073486328125e-06
+nnunet vs classical,HD95_mm,20,-100.0045,1.9073486328125e-06
+nnunet vs classical,ASD_mm,20,-27.905,1.9073486328125e-06
+nnunet vs totalseg,Dice,20,0.0395,1.9073486328125e-06
+nnunet vs totalseg,HD95_mm,20,-0.964,0.001321961308240755
+nnunet vs totalseg,ASD_mm,20,-0.5345,0.001505852119293462

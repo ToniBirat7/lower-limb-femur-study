@@ -1,10 +1,5 @@
 """
-Evaluation Metrics for Medical Image Segmentation
-Implements clinically standard metrics:
-- Dice Similarity Coefficient (DSC)
-- 95th Percentile Hausdorff Distance (HD95 in mm)
-- Average Surface Distance (ASD in mm)
-Includes unit tests on synthetic geometries.
+Segmentation metrics in physical units: Dice, HD95 (mm), average symmetric surface distance (mm).
 """
 
 import numpy as np

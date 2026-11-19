@@ -1,7 +1,7 @@
 """
-STL to Binary Voxel Mask Converter for HFValid Dataset
-Voxelizes closed surface STL meshes into binary 3D masks exactly aligned
-to the reference CT volumes using VTK and SimpleITK.
+Voxelise each reference STL surface into a binary mask on its CT grid (VTK, SimpleITK).
+
+    python src/voxelize.py --workers 4
 """
 
 import os
@@ -13,6 +13,8 @@ import vtk
 from vtkmodules.util import numpy_support
 import SimpleITK as sitk
 from tqdm import tqdm
+
+DATA = os.environ.get("FEMUR_DATA", "data")
 
 
 def voxelize_single_subject(args):
@@ -101,7 +103,7 @@ def run_voxelization(data_dir, out_dir=None, num_workers=4, overwrite=False):
     skip_count = sum(1 for _, status in results if status == "skipped")
     err_count = sum(1 for _, status in results if status.startswith("error"))
 
-    print(f"\nVoxelization finished!")
+    print("\nDone.")
     print(f"  Success: {success_count}")
     print(f"  Skipped (existing): {skip_count}")
     print(f"  Errors: {err_count}")
@@ -114,8 +116,8 @@ def run_voxelization(data_dir, out_dir=None, num_workers=4, overwrite=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Voxelize STL meshes to CT masks")
-    parser.add_argument("--data_dir", default="/run/media/tonibirat/TOSHIBA_EXT/naamii-data/HFValid", help="HFValid dataset path")
-    parser.add_argument("--out_dir", default="/run/media/tonibirat/TOSHIBA_EXT/naamii-data/HFValid/masks", help="Output directory for binary masks")
+    parser.add_argument("--data_dir", default=os.path.join(DATA, "HFValid"), help="HFValid dataset path")
+    parser.add_argument("--out_dir", default=os.path.join(DATA, "HFValid/masks"), help="Output directory for binary masks")
     parser.add_argument("--workers", type=int, default=4, help="Number of parallel worker processes")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing masks")
     args = parser.parse_args()

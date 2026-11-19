@@ -1,99 +1,58 @@
 """
-Classical Segmentation Baseline for Femur CT
-Pipeline:
-1. Hounsfield Unit Thresholding (bone window: 200 to 1800 HU)
-2. 3D Connected Component Analysis (isolate largest connected structure)
-3. Binary Hole Filling & Morphological Closing
-4. Quantitative Evaluation (Dice, HD95 in mm, ASD in mm)
+Classical femur segmentation baseline (no learning).
+
+1. Bone threshold (200 to 2000 HU)
+2. Largest 3D connected component
+3. Morphological closing
+4. Hole filling slice by slice in the axial plane, then in 3D
+   (trabecular bone in elderly femurs is often below 200 HU, so the
+   cortical shell has to be filled)
+
+    python src/classical_baseline.py --split test
 """
 
-import json
+import argparse
+import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import numpy as np
 import SimpleITK as sitk
-import pandas as pd
-from tabulate import tabulate
-from tqdm import tqdm
-from metrics import evaluate_case
+from scipy.ndimage import binary_fill_holes
+
+from src.config import ct_path, load_splits, prediction_path
+
+METHOD = "classical"
 
 
-def segment_femur_classical(ct_sitk, lower_hu=200, upper_hu=1800):
-    """
-    Classical thresholding + largest connected component baseline.
-    """
-    # 1. Thresholding
-    thresh_img = sitk.BinaryThreshold(
-        ct_sitk,
-        lowerThreshold=float(lower_hu),
-        upperThreshold=float(upper_hu),
-        insideValue=1,
-        outsideValue=0
-    )
-
-    # 2. 3D Connected Components
-    cc_filter = sitk.ConnectedComponentImageFilter()
-    labeled = cc_filter.Execute(thresh_img)
-
-    # Find label with largest size
-    relabeled = sitk.RelabelComponent(labeled)
-    # Label 1 is guaranteed to be the largest component
-    largest_cc = (relabeled == 1)
-
-    # 3. Morphological closing to seal cortical holes
-    closed_mask = sitk.BinaryMorphologicalClosing(largest_cc, [2, 2, 2])
-    filled_mask = sitk.BinaryFillhole(closed_mask)
-
-    return filled_mask
+def segment_femur_classical(ct, lower_hu=200, upper_hu=2000):
+    bone = sitk.BinaryThreshold(ct, float(lower_hu), float(upper_hu), 1, 0)
+    largest = sitk.RelabelComponent(sitk.ConnectedComponent(bone)) == 1
+    closed = sitk.BinaryMorphologicalClosing(largest, [2, 2, 1])
+    arr = sitk.GetArrayFromImage(closed).astype(bool)
+    for z in range(arr.shape[0]):
+        arr[z] = binary_fill_holes(arr[z])
+    arr = binary_fill_holes(arr)
+    out = sitk.GetImageFromArray(arr.astype(np.uint8))
+    out.CopyInformation(ct)
+    return out
 
 
-def evaluate_baseline_on_split(
-    split_name="val",
-    data_dir="/run/media/tonibirat/TOSHIBA_EXT/naamii-data/HFValid",
-    masks_dir="/run/media/tonibirat/TOSHIBA_EXT/naamii-data/HFValid/masks",
-    splits_json="/run/media/tonibirat/EA1AD7931AD75AE1/Projects/lower-limb-femur-study/splits.json",
-    out_csv="classical_baseline_results.csv"
-):
-    data_path = Path(data_dir)
-    subj_dir = data_path / "Subjects" if (data_path / "Subjects").exists() else data_path
-    masks_path = Path(masks_dir)
+def main():
+    parser = argparse.ArgumentParser(description="Classical threshold baseline")
+    parser.add_argument("--split", choices=["val", "test"], default="val")
+    args = parser.parse_args()
 
-    with open(splits_json, "r") as f:
-        splits = json.load(f)
-
-    target_ids = splits.get(split_name, [])
-    print(f"Evaluating classical baseline on {len(target_ids)} subjects in '{split_name}' split...")
-
-    results = []
-    for pat_id in tqdm(target_ids):
-        ct_path = subj_dir / pat_id / f"{pat_id}.nrrd"
-        mask_path = masks_path / f"{pat_id}_mask.nii.gz"
-
-        if not ct_path.exists() or not mask_path.exists():
-            continue
-
-        ct_img = sitk.ReadImage(str(ct_path))
-        gt_mask = sitk.ReadImage(str(mask_path))
-
-        pred_mask = segment_femur_classical(ct_img)
-        metrics = evaluate_case(pred_mask, gt_mask)
-        metrics["Patient_ID"] = pat_id
-        results.append(metrics)
-
-    df = pd.DataFrame(results)
-    cols = ["Patient_ID", "Dice", "HD95_mm", "ASD_mm"]
-    df = df[cols]
-    df.to_csv(out_csv, index=False)
-
-    print(f"\nClassical Baseline Evaluation Complete ({split_name}):")
-    print(tabulate(df, headers="keys", tablefmt="github"))
-
-    print("\nSummary Statistics:")
-    summary = df[["Dice", "HD95_mm", "ASD_mm"]].describe().T
-    print(tabulate(summary, headers="keys", tablefmt="github"))
-    return df
+    cases = load_splits()[args.split]
+    for i, cid in enumerate(cases, 1):
+        out = prediction_path(METHOD, cid)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        sitk.WriteImage(segment_femur_classical(sitk.ReadImage(str(ct_path(cid)))), str(out), True)
+        print(f"[{i}/{len(cases)}] {cid}")
 
 
 if __name__ == "__main__":
-    import sys
-    split = sys.argv[1] if len(sys.argv) > 1 else "val"
-    evaluate_baseline_on_split(split)
+    main()
