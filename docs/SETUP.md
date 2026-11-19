@@ -11,6 +11,12 @@ uv pip install -e ".[dev]"
 pytest
 ```
 
+Or run the synthetic unit tests inside Docker without downloading datasets:
+
+```bash
+docker build -t femur-study . && docker run --rm femur-study
+```
+
 Versions used: Python 3.12.13, torch 2.15.0 (CUDA 13.2), MONAI 1.6.1, nnU-Net v2 2.8.1, TotalSegmentator 2.18.0, SimpleITK 2.5.6, PyVista 0.49.2, VTK 9.7.1.
 
 ## Data
@@ -69,10 +75,11 @@ python src/planning.py --split test
 python src/planning.py --split test --method nnunet
 python src/planning_agreement.py --split test --methods nnunet
 
-# 6. Projection experiment and registration
+# 6. Projection experiment, registration and summary plots
 python src/xray_projection.py --split all
 python src/registration.py --synthetic 10
 python src/registration.py --pairs 10
+python src/plot_results.py
 ```
 
 TotalSegmentator downloads its weights on first use; set `TOTALSEG_HOME_DIR` to keep them off the system drive.

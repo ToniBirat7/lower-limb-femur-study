@@ -23,6 +23,8 @@ Everything was tuned on validation; the test set was scored once.
 
 ### 1. Segmentation (test, 20 patients)
 
+![Held-out test set segmentation accuracy](figures/segmentation_test.png)
+
 | Method | Dice | HD95 (mm) | ASD (mm) |
 |---|---|---|---|
 | Threshold baseline (200 to 2000 HU, largest component, hole filling) | 0.672 ± 0.084 | 97.2 ± 36.8 | 27.1 ± 16.1 |
@@ -32,6 +34,7 @@ Everything was tuned on validation; the test set was scored once.
 
 Mean ± SD over patients; bootstrap 95% intervals and per-patient scores are in `results/`.
 Training on one RTX 3060 Laptop GPU (6 GB): MONAI 73 minutes, nnU-Net about 2.6 hours.
+For `Dataset001_Femur` (`3d_fullres`), nnU-Net's fingerprint rules resampled scans to the median spacing (`2.0 x 0.742 x 0.742 mm`), chose `CTNormalization`, and built a 6-stage `PlainConvUNet` (`32, 64, 128, 256, 320, 320` channels, batch size `2`) starting with a `1 x 3 x 3` kernel in stage 1 and a `1 x 2 x 2` in-plane stride in stage 2 before switching to isotropic `3 x 3 x 3` convolutions because axial spacing is 2.7 times coarser than in-plane spacing. Default planning (`nnUNetPlans.json`) picked a `112 x 160 x 112` patch; targeting 5 GB VRAM (`nnUNetPlans_5G.json`) reduced the patch to `96 x 128 x 96`.
 Paired Wilcoxon tests against nnU-Net:
 
 - nnU-Net beats TotalSegmentator on all three metrics (p < 0.002).
@@ -66,6 +69,8 @@ Agreement on the 20 test patients, measured on a mesh built from each predicted 
 Mean absolute difference, angles in degrees; Bland-Altman bias and limits are in `results/planning_agreement_test.csv`.
 The control row shows the error added by going through a voxel mask at all.
 The threshold masks include parts of the pelvis, which pulls the head fit off the femur.
+
+![Planning measurement agreement](figures/planning_agreement.png)
 
 Without smoothing, voxel steps on the neck made the neck-axis fit fail on at least 5 of the 20 reference masks.
 The largest differences for all three models come from one femur (Pat058).
@@ -128,13 +133,21 @@ src/
   planning_agreement.py  predicted vs reference measurements
   xray_projection.py     rotation experiment and simulated radiograph
   registration.py        SimpleITK and VTK registration with landmark error
+  plot_results.py        summary figures from test CSVs
 tests/                   unit tests on synthetic data (pytest)
 results/                 per-patient and summary CSVs
-figures/
+figures/                 plots and DRR projection figure
+docs/                    data card and setup guide
+Dockerfile               container running the unit test suite
 splits.json
 ```
 
 Reproduction steps: [docs/SETUP.md](docs/SETUP.md).
+Run `python src/plot_results.py` to regenerate the segmentation and planning summary plots from `results/`, or run the unit tests in Docker:
+
+```bash
+docker build -t femur-study . && docker run --rm femur-study
+```
 
 ## Limitations
 
