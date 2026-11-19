@@ -27,11 +27,15 @@ Everything was tuned on validation; the test set was scored once.
 |---|---|---|---|
 | Threshold baseline (200 to 2000 HU, largest component, hole filling) | 0.672 ± 0.084 | 97.2 ± 36.8 | 27.1 ± 16.1 |
 | TotalSegmentator `total`, 1.5 mm model, no training | 0.927 ± 0.075 | 11.0 ± 32.2 (median 2.0) | 2.37 ± 6.30 (median 0.71) |
-| MONAI 3D U-Net, 1.5 mm | MONAI_TEST_DICE | MONAI_TEST_HD | MONAI_TEST_ASD |
+| MONAI 3D U-Net (residual units), 1.5 mm, 1000 epochs | 0.987 ± 0.004 | 1.03 ± 0.44 (median 0.79) | 0.24 ± 0.13 (median 0.19) |
 | nnU-Net v2 `3d_fullres`, 100 epochs | 0.990 ± 0.008 | 7.2 ± 28.6 (median 0.78) | 0.71 ± 2.44 (median 0.13) |
 
 Mean ± SD over patients; bootstrap 95% intervals and per-patient scores are in `results/`.
-nnU-Net beats TotalSegmentator on all three metrics (paired Wilcoxon, p < 0.002).
+Training on one RTX 3060 Laptop GPU (6 GB): MONAI 73 minutes, nnU-Net about 2.6 hours.
+Paired Wilcoxon tests against nnU-Net:
+
+- nnU-Net beats TotalSegmentator on all three metrics (p < 0.002).
+- nnU-Net has a higher Dice than the MONAI U-Net (median difference 0.004, p = 0.002), but their HD95 does not differ (p = 0.24). The MONAI U-Net has no failure case: its lowest Dice is 0.975 and its highest HD95 is 2.0 mm.
 
 - The threshold baseline cannot separate the femur from the pelvis at the hip and from the tibia at the knee, which gives the large surface distances.
 - TotalSegmentator is good on most patients but fails on two (Dice 0.65 and 0.79) by stopping short of the knee: in Pat084 it misses the distal 40% of the femur's length.
@@ -55,6 +59,7 @@ Agreement on the 20 test patients, measured on a mesh built from each predicted 
 |---|---|---|---|---|
 | Reference mask (control) | 0.09 mm | 0.53 (median 0.37) | 0.97 (median 0.49) | 0.03 |
 | nnU-Net | 0.18 mm | 1.36 (median 0.80) | 2.99 (median 0.98) | 0.03 |
+| MONAI U-Net | 0.59 mm | 1.51 (median 0.90) | 3.48 (median 0.88) | 0.08 |
 | TotalSegmentator | 0.66 mm | 1.12 (median 0.65) | 2.59 (median 1.78), 18 of 20 | 0.13 |
 | Threshold baseline | 7.74 mm | 12 of 20 measured, median 22 | 12 of 20 measured, median 30 | 3.45 |
 
@@ -63,7 +68,7 @@ The control row shows the error added by going through a voxel mask at all.
 The threshold masks include parts of the pelvis, which pulls the head fit off the femur.
 
 Without smoothing, voxel steps on the neck made the neck-axis fit fail on at least 5 of the 20 reference masks.
-The largest differences for both models come from one femur (Pat058).
+The largest differences for all three models come from one femur (Pat058).
 Its nnU-Net mask has Dice 0.99 and HD95 0.8 mm, yet the neck-shaft angle moves by 11.5 degrees and anteversion by 33 degrees: the narrowest-section search settles on a different neck section after a small surface change.
 High overlap scores therefore do not guarantee a stable angle, and the neck-axis method needs a stability check before clinical use.
 

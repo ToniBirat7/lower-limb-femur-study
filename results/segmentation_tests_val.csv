@@ -2,6 +2,9 @@ comparison,metric,n,median_difference,p_value
 nnunet vs classical,Dice,10,0.2446,0.001953125
 nnunet vs classical,HD95_mm,10,-50.292,0.001953125
 nnunet vs classical,ASD_mm,10,-9.822,0.001953125
+nnunet vs monai,Dice,10,0.003,0.001953125
+nnunet vs monai,HD95_mm,10,0.0,1.0
+nnunet vs monai,ASD_mm,10,-0.0445,0.001953125
 nnunet vs totalseg,Dice,10,0.0424,0.001953125
 nnunet vs totalseg,HD95_mm,10,-1.258,0.001953125
 nnunet vs totalseg,ASD_mm,10,-0.5525,0.001953125

@@ -3,6 +3,10 @@ reference_mask,head_diameter_mm,20,-0.02,-0.28,0.24,0.09,0.39
 reference_mask,nsa_deg,20,-0.07,-1.63,1.5,0.53,2.61
 reference_mask,anteversion_deg,20,0.44,-2.57,3.45,0.97,5.32
 reference_mask,ama_deg,20,-0.01,-0.08,0.05,0.03,0.07
+monai,head_diameter_mm,20,-0.46,-2.51,1.6,0.59,4.27
+monai,nsa_deg,20,-0.79,-6.32,4.74,1.51,11.64
+monai,anteversion_deg,20,-1.32,-18.9,16.25,3.48,37.08
+monai,ama_deg,20,0.03,-0.16,0.21,0.08,0.24
 nnunet,head_diameter_mm,20,0.03,-0.49,0.55,0.18,0.86
 nnunet,nsa_deg,20,-0.84,-6.23,4.55,1.36,11.51
 nnunet,anteversion_deg,20,-1.73,-16.74,13.28,2.99,33.16
