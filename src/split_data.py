@@ -67,6 +67,6 @@ def generate_splits(audit_csv_path, output_json_path, seed=42):
 
 if __name__ == "__main__":
     import sys
-    audit_csv = sys.argv[1] if len(sys.argv) > 1 else "hfvalid_audit.csv"
+    audit_csv = sys.argv[1] if len(sys.argv) > 1 else "results/data/hfvalid_audit.csv"
     out_json = sys.argv[2] if len(sys.argv) > 2 else "splits.json"
     generate_splits(audit_csv, out_json)

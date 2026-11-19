@@ -7,11 +7,11 @@ Tested on Linux with an RTX 3060 Laptop GPU (6 GB), 12 CPU cores and 30 GB RAM.
 ```bash
 uv venv --python 3.12 && source .venv/bin/activate
 uv pip install torch --index-url https://download.pytorch.org/whl/cu132
-uv pip install -e ".[dev]"
+uv pip install -e ".[models,dev]"
 pytest
 ```
 
-Or run the synthetic unit tests inside Docker without downloading datasets:
+The unit tests need no dataset or GPU; they also run in Docker:
 
 ```bash
 docker build -t femur-study . && docker run --rm femur-study
@@ -44,9 +44,9 @@ export nnUNet_results=$FEMUR_DATA/nnunet/nnUNet_results
 
 ```bash
 # 1. Audit, masks, split, quality checks
-python src/audit.py $FEMUR_DATA/HFValid hfvalid_audit.csv
-python src/voxelize.py --data_dir $FEMUR_DATA/HFValid --out_dir $FEMUR_DATA/HFValid/masks --workers 4
-python src/split_data.py hfvalid_audit.csv splits.json
+python src/audit.py                     # writes results/data/hfvalid_audit.csv
+python src/voxelize.py --workers 4
+python src/split_data.py                # writes splits.json
 python src/data_quality.py
 
 # 2. nnU-Net: train 71, validate 10 (fold 0 = splits.json), test 20 in imagesTs
@@ -54,6 +54,7 @@ python src/convert_nnunet.py
 nnUNetv2_plan_and_preprocess -d 1 -c 3d_fullres -gpu_memory_target 5 -overwrite_plans_name nnUNetPlans_5G
 python -c "import json; s=json.load(open('splits.json')); json.dump([{'train': s['train'], 'val': s['val']}], open('$nnUNet_preprocessed/Dataset001_Femur/splits_final.json', 'w'))"
 nnUNetv2_train 1 3d_fullres 0 -p nnUNetPlans_5G -tr nnUNetTrainer_100epochs
+mkdir -p $FEMUR_DATA/predictions/nnunet
 cp $nnUNet_results/Dataset001_Femur/nnUNetTrainer_100epochs__nnUNetPlans_5G__3d_fullres/fold_0/validation/Pat*.nii.gz $FEMUR_DATA/predictions/nnunet/
 nnUNetv2_predict -i $nnUNet_raw/Dataset001_Femur/imagesTs -o $FEMUR_DATA/predictions/nnunet \
   -d 1 -c 3d_fullres -p nnUNetPlans_5G -tr nnUNetTrainer_100epochs -f 0
@@ -61,8 +62,8 @@ nnUNetv2_predict -i $nnUNet_raw/Dataset001_Femur/imagesTs -o $FEMUR_DATA/predict
 # 3. Other methods
 python src/classical_baseline.py --split val && python src/classical_baseline.py --split test
 python src/totalseg_pipeline.py --split val && python src/totalseg_pipeline.py --split test
-python src/monai_pipeline.py --mode sanity
-python src/monai_pipeline.py --mode train --hours 1.5 --epochs 150
+python src/monai_pipeline.py --mode sanity    # overfits two cases as a check
+python src/monai_pipeline.py --mode train --hours 2 --epochs 1000
 python src/monai_pipeline.py --mode predict --split val && python src/monai_pipeline.py --mode predict --split test
 
 # 4. Scoring
@@ -72,8 +73,8 @@ python src/evaluate.py --split test
 # 5. Planning measurements and agreement
 python src/planning.py --split all
 python src/planning.py --split test
-python src/planning.py --split test --method nnunet
-python src/planning_agreement.py --split test --methods nnunet
+for m in reference_mask nnunet monai totalseg classical; do python src/planning.py --split test --method $m; done
+python src/planning_agreement.py --split test --methods reference_mask nnunet monai totalseg classical
 
 # 6. Projection experiment, registration and summary plots
 python src/xray_projection.py --split all
@@ -82,4 +83,5 @@ python src/registration.py --pairs 10
 python src/plot_results.py
 ```
 
+Outputs go to `results/<topic>/` and `figures/`.
 TotalSegmentator downloads its weights on first use; set `TOTALSEG_HOME_DIR` to keep them off the system drive.

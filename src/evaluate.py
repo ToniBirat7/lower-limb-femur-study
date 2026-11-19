@@ -21,7 +21,7 @@ import pandas as pd
 import SimpleITK as sitk
 from scipy.stats import wilcoxon
 
-from src.config import RESULTS_DIR, load_splits, mask_path, prediction_path
+from src.config import load_splits, mask_path, prediction_path, result_path
 from src.metrics import evaluate_case
 
 METRICS = ["Dice", "HD95_mm", "ASD_mm"]
@@ -82,25 +82,24 @@ def main():
     args = parser.parse_args()
 
     cases = load_splits()[args.split]
-    RESULTS_DIR.mkdir(exist_ok=True)
     per_method = {}
     for method in args.methods:
         df = score_method(method, cases)
         if df.empty:
             print(f"{method}: no predictions for {args.split}")
             continue
-        df.to_csv(RESULTS_DIR / f"segmentation_{method}_{args.split}.csv", index=False)
+        df.to_csv(result_path("segmentation", f"{method}_{args.split}.csv"), index=False)
         per_method[method] = df
         print(f"{method}: {len(df)} cases, Dice {df.Dice.mean():.4f}")
 
     summary = summarise(per_method)
-    summary.to_csv(RESULTS_DIR / f"segmentation_summary_{args.split}.csv", index=False)
+    summary.to_csv(result_path("segmentation", f"summary_{args.split}.csv"), index=False)
     print("\n" + summary.to_string(index=False))
 
     if len(per_method) > 1:
         best = max(per_method, key=lambda k: per_method[k].Dice.mean())
         tests = paired_tests(per_method, best)
-        tests.to_csv(RESULTS_DIR / f"segmentation_tests_{args.split}.csv", index=False)
+        tests.to_csv(result_path("segmentation", f"tests_{args.split}.csv"), index=False)
         print("\n" + tests.to_string(index=False))
 
 

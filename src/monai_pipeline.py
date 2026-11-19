@@ -7,7 +7,7 @@ mixed precision (float16 overflowed to NaN on some patches); inference uses
 sliding windows and maps the prediction back to the original CT grid.
 
     python src/monai_pipeline.py --mode sanity            # overfit two cases
-    python src/monai_pipeline.py --mode train --hours 2
+    python src/monai_pipeline.py --mode train --hours 2 --epochs 1000
     python src/monai_pipeline.py --mode predict --split test
 """
 
@@ -45,7 +45,7 @@ from monai.transforms import (
 )
 from monai.utils import set_determinism
 
-from src.config import NNUNET_RAW, RESULTS_DIR, WEIGHTS_DIR, load_splits, mask_path, prediction_path
+from src.config import NNUNET_RAW, WEIGHTS_DIR, load_splits, mask_path, prediction_path, result_path
 
 METHOD = "monai"
 PATCH = (96, 96, 96)
@@ -146,10 +146,9 @@ def train(hours, max_epochs, device, cases_train, cases_val, val_every=10):
         if out_of_time:
             print(f"time budget of {hours} h reached")
             break
-    RESULTS_DIR.mkdir(exist_ok=True)
     import pandas as pd
 
-    pd.DataFrame(log).to_csv(RESULTS_DIR / "monai_training_log.csv", index=False)
+    pd.DataFrame(log).to_csv(result_path("training", "monai_log.csv"), index=False)
     print(f"best validation Dice {best:.4f}, checkpoint {CKPT}")
 
 
@@ -203,7 +202,7 @@ def main():
     parser = argparse.ArgumentParser(description="MONAI 3D U-Net")
     parser.add_argument("--mode", choices=["sanity", "train", "predict"], default="sanity")
     parser.add_argument("--hours", type=float, default=2.0, help="training time budget")
-    parser.add_argument("--epochs", type=int, default=300)
+    parser.add_argument("--epochs", type=int, default=1000)
     parser.add_argument("--split", choices=["val", "test"], default="test")
     args = parser.parse_args()
 

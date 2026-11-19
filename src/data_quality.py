@@ -27,7 +27,7 @@ import pandas as pd
 import pyvista as pv
 import SimpleITK as sitk
 
-from src.config import RESULTS_DIR, ct_path, landmarks_path, load_splits, mask_path, stl_path
+from src.config import ct_path, landmarks_path, load_splits, mask_path, result_path, stl_path
 from src.planning import parse_palp_landmarks
 
 
@@ -81,8 +81,7 @@ def main():
         flags.append("; ".join(f) if f else "ok")
     df["flags"] = flags
 
-    RESULTS_DIR.mkdir(exist_ok=True)
-    df.to_csv(RESULTS_DIR / "data_quality.csv", index=False)
+    df.to_csv(result_path("data", "data_quality.csv"), index=False)
     print(df.drop(columns=["hash"]).describe().round(2).to_string())
     print("\nFlagged subjects:")
     flagged = df[df["flags"] != "ok"][["subject_id", "flags"]]

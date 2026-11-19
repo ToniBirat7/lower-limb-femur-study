@@ -33,7 +33,7 @@ def test_shifted_masks():
     hd95 = compute_hd95(mask1, mask2, spacing)
     asd = compute_asd(mask1, mask2, spacing)
 
-    assert dsc < 1.0
+    assert np.isclose(dsc, 19 / 24)  # 5 of 24 slices no longer overlap
     assert hd95 > 0.0
     assert asd > 0.0
 

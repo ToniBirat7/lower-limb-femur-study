@@ -31,7 +31,7 @@ import pandas as pd
 import SimpleITK as sitk
 import vtk
 
-from src.config import RESULTS_DIR, ct_path, landmarks_path, load_sides, load_splits, mask_path, stl_path
+from src.config import ct_path, landmarks_path, load_sides, load_splits, mask_path, result_path, stl_path
 from src.planning import parse_palp_landmarks
 
 LANDMARKS = ["femurHead", "greatTroch", "kneeCenter"]
@@ -194,8 +194,7 @@ def main():
     if args.synthetic:
         rows = [synthetic_recovery(c) for c in load_splits()["val"][: args.synthetic]]
         df = pd.DataFrame(rows)
-        RESULTS_DIR.mkdir(exist_ok=True)
-        df.to_csv(RESULTS_DIR / "registration_synthetic.csv", index=False)
+        df.to_csv(result_path("registration", "synthetic.csv"), index=False)
         print(df.round(2).to_string(index=False))
         print(df[["before_mm", "after_mm"]].agg(["mean", "max"]).round(2).to_string())
         return
@@ -206,8 +205,7 @@ def main():
         rows.append(row)
         print(", ".join(f"{k}={v:.2f}" if isinstance(v, float) else f"{k}={v}" for k, v in row.items()), flush=True)
     df = pd.DataFrame(rows)
-    RESULTS_DIR.mkdir(exist_ok=True)
-    df.to_csv(RESULTS_DIR / "registration_tre.csv", index=False)
+    df.to_csv(result_path("registration", "between_patients.csv"), index=False)
     cols = [c for c in df.columns if c.endswith("_mm")]
     print("\nTRE (mm), mean over landmarks then over pairs:")
     print(df[cols].agg(["mean", "std", "median"]).round(2).to_string())

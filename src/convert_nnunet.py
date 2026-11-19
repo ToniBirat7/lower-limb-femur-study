@@ -104,7 +104,7 @@ def convert_dataset_to_nnunet(
     with open(out_dataset_dir / "dataset.json", "w", encoding="utf-8") as f:
         json.dump(dataset_json_data, f, indent=2)
 
-    print(f"\n[DONE] nnU-Net dataset formatted successfully at {out_dataset_dir}")
+    print(f"\nWrote {out_dataset_dir}")
     print(f"Generated dataset.json with {len(train_ids)} training volumes.")
 
 

@@ -19,6 +19,13 @@ RESULTS_DIR = REPO_ROOT / "results"
 FIGURES_DIR = REPO_ROOT / "figures"
 
 
+def result_path(topic, name):
+    """results/<topic>/<name>, creating the folder."""
+    folder = RESULTS_DIR / topic
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / name
+
+
 def ct_path(subject_id):
     return SUBJECTS_DIR / subject_id / f"{subject_id}.nrrd"
 

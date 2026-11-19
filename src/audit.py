@@ -54,7 +54,7 @@ def parse_palp_inp(inp_path):
     return landmarks
 
 
-def audit_hfvalid(data_dir, output_csv="hfvalid_audit.csv"):
+def audit_hfvalid(data_dir, output_csv="results/data/hfvalid_audit.csv"):
     data_path = Path(data_dir)
     subject_dirs = sorted([d for d in data_path.iterdir() if d.is_dir() and d.name.startswith("Pat")])
     if not subject_dirs:
@@ -140,6 +140,7 @@ def audit_hfvalid(data_dir, output_csv="hfvalid_audit.csv"):
         records.append(record)
 
     df = pd.DataFrame(records)
+    Path(output_csv).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_csv, index=False)
     print(f"\nSaved {len(df)} rows to {output_csv}")
     print("\nSummary Statistics:")
@@ -150,5 +151,5 @@ def audit_hfvalid(data_dir, output_csv="hfvalid_audit.csv"):
 if __name__ == "__main__":
     import sys
     data_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(DATA, "HFValid")
-    output_path = sys.argv[2] if len(sys.argv) > 2 else "hfvalid_audit.csv"
+    output_path = sys.argv[2] if len(sys.argv) > 2 else "results/data/hfvalid_audit.csv"
     audit_hfvalid(data_dir, output_path)

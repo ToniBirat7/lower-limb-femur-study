@@ -18,7 +18,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import pandas as pd
 
-from src.config import RESULTS_DIR
+from src.config import result_path
 
 MEASURES = ["head_diameter_mm", "nsa_deg", "anteversion_deg", "ama_deg"]
 
@@ -46,14 +46,14 @@ def main():
     parser.add_argument("--methods", nargs="+", default=["nnunet"])
     args = parser.parse_args()
 
-    ref = pd.read_csv(RESULTS_DIR / f"planning_reference_{args.split}.csv")
+    ref = pd.read_csv(result_path("planning", f"reference_{args.split}.csv"))
     tables = []
     for method in args.methods:
-        df = agreement(ref, pd.read_csv(RESULTS_DIR / f"planning_{method}_{args.split}.csv"))
+        df = agreement(ref, pd.read_csv(result_path("planning", f"{method}_{args.split}.csv")))
         df.insert(0, "method", method)
         tables.append(df)
     out = pd.concat(tables)
-    out.to_csv(RESULTS_DIR / f"planning_agreement_{args.split}.csv", index=False)
+    out.to_csv(result_path("planning", f"agreement_{args.split}.csv"), index=False)
     print(out.to_string(index=False))
 
 

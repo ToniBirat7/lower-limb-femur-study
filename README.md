@@ -9,6 +9,8 @@ Questions:
 3. How large is the neck-shaft angle error on a simulated radiograph when the leg is rotated?
 4. What landmark error remains after rigid, affine and surface registration between patients?
 
+Design choices, problems met along the way and what they taught me: [docs/NOTES.md](docs/NOTES.md).
+
 ## Data
 
 101 femur CTs from older women, each with a reference surface (STL) and four landmarks.
@@ -23,7 +25,7 @@ Everything was tuned on validation; the test set was scored once.
 
 ### 1. Segmentation (test, 20 patients)
 
-![Held-out test set segmentation accuracy](figures/segmentation_test.png)
+![Dice and HD95 per patient for the four methods](figures/segmentation_test.png)
 
 | Method | Dice | HD95 (mm) | ASD (mm) |
 |---|---|---|---|
@@ -32,17 +34,14 @@ Everything was tuned on validation; the test set was scored once.
 | MONAI 3D U-Net (residual units), 1.5 mm, 1000 epochs | 0.987 ± 0.004 | 1.03 ± 0.44 (median 0.79) | 0.24 ± 0.13 (median 0.19) |
 | nnU-Net v2 `3d_fullres`, 100 epochs | 0.990 ± 0.008 | 7.2 ± 28.6 (median 0.78) | 0.71 ± 2.44 (median 0.13) |
 
-Mean ± SD over patients; bootstrap 95% intervals and per-patient scores are in `results/`.
-Training on one RTX 3060 Laptop GPU (6 GB): MONAI 73 minutes, nnU-Net about 2.6 hours.
-For `Dataset001_Femur` (`3d_fullres`), nnU-Net's fingerprint rules resampled scans to the median spacing (`2.0 x 0.742 x 0.742 mm`), chose `CTNormalization`, and built a 6-stage `PlainConvUNet` (`32, 64, 128, 256, 320, 320` channels, batch size `2`) starting with a `1 x 3 x 3` kernel in stage 1 and a `1 x 2 x 2` in-plane stride in stage 2 before switching to isotropic `3 x 3 x 3` convolutions because axial spacing is 2.7 times coarser than in-plane spacing. Default planning (`nnUNetPlans.json`) picked a `112 x 160 x 112` patch; targeting 5 GB VRAM (`nnUNetPlans_5G.json`) reduced the patch to `96 x 128 x 96`.
-Paired Wilcoxon tests against nnU-Net:
+Mean ± SD over patients; bootstrap 95% intervals, paired tests and per-patient scores are in `results/segmentation/`.
+Training on one RTX 3060 Laptop GPU (6 GB): MONAI 73 minutes, nnU-Net about 2.6 hours with its patch reduced to 96 x 128 x 96 to fit in memory.
 
-- nnU-Net beats TotalSegmentator on all three metrics (p < 0.002).
+- nnU-Net beats TotalSegmentator on all three metrics (paired Wilcoxon, p < 0.002).
 - nnU-Net has a higher Dice than the MONAI U-Net (median difference 0.004, p = 0.002), but their HD95 does not differ (p = 0.24). The MONAI U-Net has no failure case: its lowest Dice is 0.975 and its highest HD95 is 2.0 mm.
-
-- The threshold baseline cannot separate the femur from the pelvis at the hip and from the tibia at the knee, which gives the large surface distances.
-- TotalSegmentator is good on most patients but fails on two (Dice 0.65 and 0.79) by stopping short of the knee: in Pat084 it misses the distal 40% of the femur's length.
-- nnU-Net's mean HD95 comes from one patient (Pat027): a separate 22 ml region near the midline, probably at the other hip. Keeping only the largest connected component gives Dice 0.986 and HD95 1.4 mm for that patient. This step was not chosen on validation (no validation case needed it), so the table reports the raw output.
+- nnU-Net's mean HD95 comes from one patient (Pat027): a separate 22 ml region near the midline. Keeping only the largest connected component gives Dice 0.986 and HD95 1.4 mm for that patient. No validation case needed this step, so the table reports the raw output.
+- TotalSegmentator fails on two patients (Dice 0.65 and 0.79) by stopping short of the knee: in Pat084 it misses the distal 40% of the femur's length.
+- The threshold baseline cannot separate the femur from the pelvis at the hip or from the tibia at the knee, which gives the large surface distances.
 
 ### 2. Planning measurements
 
@@ -66,13 +65,12 @@ Agreement on the 20 test patients, measured on a mesh built from each predicted 
 | TotalSegmentator | 0.66 mm | 1.12 (median 0.65) | 2.59 (median 1.78), 18 of 20 | 0.13 |
 | Threshold baseline | 7.74 mm | 12 of 20 measured, median 22 | 12 of 20 measured, median 30 | 3.45 |
 
-Mean absolute difference, angles in degrees; Bland-Altman bias and limits are in `results/planning_agreement_test.csv`.
-The control row shows the error added by going through a voxel mask at all.
+Mean absolute difference, angles in degrees; Bland-Altman bias and limits are in `results/planning/agreement_test.csv`.
+The control row is the error added by going through a voxel mask at all.
 The threshold masks include parts of the pelvis, which pulls the head fit off the femur.
 
-![Planning measurement agreement](figures/planning_agreement.png)
+![Difference from the reference for each planning measurement](figures/planning_agreement.png)
 
-Without smoothing, voxel steps on the neck made the neck-axis fit fail on at least 5 of the 20 reference masks.
 The largest differences for all three models come from one femur (Pat058).
 Its nnU-Net mask has Dice 0.99 and HD95 0.8 mm, yet the neck-shaft angle moves by 11.5 degrees and anteversion by 33 degrees: the narrowest-section search settles on a different neck section after a small surface change.
 High overlap scores therefore do not guarantee a stable angle, and the neck-axis method needs a stability check before clinical use.
@@ -81,7 +79,7 @@ High overlap scores therefore do not guarantee a stable angle, and the neck-axis
 
 Each femur's 3D neck and shaft axes are placed in a femoral frame (mechanical axis and posterior condylar axis), rotated about the mechanical axis, and projected onto a front-view detector plane (`src/xray_projection.py`).
 
-![Projected minus 3D neck-shaft angle](figures/xray_projection_error.png)
+![Projected minus 3D neck-shaft angle against leg rotation](figures/xray_projection_error.png)
 
 | Leg rotation | Projected minus 3D angle (101 femurs) |
 |---|---|
@@ -93,9 +91,9 @@ Each femur's 3D neck and shaft axes are placed in a femoral frame (mechanical ax
 With the knee facing forward the radiograph overstates the angle by about 2 degrees, and by 8 degrees at 20 degrees of external rotation.
 The error is smallest at 15 to 20 degrees of internal rotation, and the rotation that minimises it rises with the femur's anteversion (r = 0.48).
 This matches the clinical practice of rotating the leg internally for a hip radiograph.
-The experiment uses parallel projection of the measured axes, so it isolates rotation and ignores beam divergence and soft-tissue overlap.
+The experiment projects the measured axes in parallel, so it isolates rotation and ignores beam divergence and soft-tissue overlap.
 
-`figures/drr_Pat003.png` shows a simulated radiograph (CT projected along the anterior-posterior direction) at three rotations.
+![Simulated radiographs of one femur at three rotations](figures/drr_Pat003.png)
 
 ### 4. Registration between patients
 
@@ -113,11 +111,23 @@ Ten same-side pairs (validation to test), scored by the mean distance between th
 Different femurs differ in length and shape, so part of the remaining 14 mm is real anatomy, not registration error.
 As a check of the registration code, each of 10 CTs was moved by a known rigid transform (rotations of 4 to 8 degrees, a 21 mm shift) and registered back: landmark error fell from 34.8 mm to 0.03 mm (max 0.05).
 
+## Running it
+
+```bash
+pip install -e ".[dev]"                 # analysis and tests
+pip install -e ".[models,dev]"          # adds torch, MONAI, nnU-Net, TotalSegmentator
+pytest                                  # unit tests on synthetic data, no dataset needed
+docker build -t femur-study . && docker run --rm femur-study   # the same tests in a container
+python src/plot_results.py              # redraw the summary figures from results/
+```
+
+The full pipeline, from download to figures: [docs/SETUP.md](docs/SETUP.md).
+
 ## Repository
 
 ```
 src/
-  config.py              paths (set FEMUR_DATA)
+  config.py              paths (set FEMUR_DATA) and output folders
   audit.py               header audit of all scans
   voxelize.py            STL to mask on the CT grid
   split_data.py          patient-level split
@@ -130,23 +140,21 @@ src/
   evaluate.py            scoring, bootstrap intervals, paired tests
   geometry.py            sphere and line fits
   planning.py            planning measurements
-  planning_agreement.py  predicted vs reference measurements
+  planning_agreement.py  predicted against reference measurements
   xray_projection.py     rotation experiment and simulated radiograph
   registration.py        SimpleITK and VTK registration with landmark error
-  plot_results.py        summary figures from test CSVs
-tests/                   unit tests on synthetic data (pytest)
-results/                 per-patient and summary CSVs
-figures/                 plots and DRR projection figure
-docs/                    data card and setup guide
-Dockerfile               container running the unit test suite
-splits.json
-```
-
-Reproduction steps: [docs/SETUP.md](docs/SETUP.md).
-Run `python src/plot_results.py` to regenerate the segmentation and planning summary plots from `results/`, or run the unit tests in Docker:
-
-```bash
-docker build -t femur-study . && docker run --rm femur-study
+  plot_results.py        summary figures
+tests/                   unit tests on synthetic data
+results/
+  data/                  header audit and quality checks
+  segmentation/          per-patient scores, summaries and paired tests
+  planning/              measurements per method and agreement
+  projection/            rotation experiment
+  registration/          between-patient and known-transform results
+  training/              MONAI training log
+figures/
+docs/                    notes, data card, setup
+splits.json              patient-level split
 ```
 
 ## Limitations

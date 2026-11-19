@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 import pyvista as pv
 
-from src.config import RESULTS_DIR, landmarks_path, load_sides, load_splits, mask_path, prediction_path, stl_path
+from src.config import landmarks_path, load_sides, load_splits, mask_path, prediction_path, result_path, stl_path
 from src.geometry import fit_line_3d, fit_sphere_least_squares
 
 UP = np.array([0.0, 0.0, 1.0])
@@ -280,8 +280,7 @@ def main():
     splits = load_splits()
     cases = splits["train"] + splits["val"] + splits["test"] if args.split == "all" else splits[args.split]
     df = run(cases, args.method)
-    RESULTS_DIR.mkdir(exist_ok=True)
-    out = RESULTS_DIR / f"planning_{args.method}_{args.split}.csv"
+    out = result_path("planning", f"{args.method}_{args.split}.csv")
     df.to_csv(out, index=False)
     print(f"\nSaved {out}")
     print(df.drop(columns=["subject_id", "side"]).describe().round(2).to_string())

@@ -26,7 +26,7 @@ if str(REPO_ROOT) not in sys.path:
 import numpy as np
 import pandas as pd
 
-from src.config import FIGURES_DIR, RESULTS_DIR, landmarks_path, load_sides, load_splits, stl_path
+from src.config import FIGURES_DIR, landmarks_path, load_sides, load_splits, result_path, stl_path
 from src.planning import load_mesh, measure, parse_palp_landmarks, unit
 
 ROTATIONS = np.arange(-30, 31, 5)
@@ -166,10 +166,9 @@ def main():
     splits = load_splits()
     cases = splits["train"] + splits["val"] + splits["test"] if args.split == "all" else splits[args.split]
     df = run(cases)
-    RESULTS_DIR.mkdir(exist_ok=True)
-    df.to_csv(RESULTS_DIR / f"xray_projection_{args.split}.csv", index=False)
+    df.to_csv(result_path("projection", f"rotation_{args.split}.csv"), index=False)
     by_rot, per_case, r = summarise(df)
-    by_rot.to_csv(RESULTS_DIR / f"xray_projection_{args.split}_summary.csv")
+    by_rot.to_csv(result_path("projection", f"rotation_{args.split}_summary.csv"))
     plot(df, FIGURES_DIR / "xray_projection_error.png")
     print("\nError (projected - 3D NSA) by rotation:")
     print(by_rot.to_string())

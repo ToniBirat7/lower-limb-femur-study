@@ -1,6 +1,6 @@
 # Data card: HFValid v3
 
-Values below are computed from `HFValid_Metadata.csv` and the image headers (`hfvalid_audit.csv`, `results/data_quality.csv`).
+Values below are computed from `HFValid_Metadata.csv` and the image headers (`results/data/hfvalid_audit.csv`, `results/data/data_quality.csv`).
 
 ## Source
 
